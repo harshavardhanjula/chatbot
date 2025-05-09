@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>API Tester</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 2em; }
+        h2 { margin-top: 2em; }
+        input, button, textarea { margin: 0.5em 0; padding: 0.5em; }
+        label { display: block; margin-top: 1em; }
+        .result { background: #f4f4f4; padding: 1em; margin-top: 1em; border-radius: 5px; }
+    </style>
+</head>
+<body>
+    <h1>API Tester</h1>
+    <h2>GET Endpoints</h2>
+    <ul>
+        <li><a href="http://localhost:5000/api/chat/requests" target="_blank">List Pending Requests</a></li>
+        <li><a href="http://localhost:5000/api/chat/all-requests" target="_blank">List All Requests (if implemented)</a></li>
+    </ul>
+
+    <h2>POST /api/chat/request</h2>
+    <form id="requestForm">
+        <label>Name: <input name="name" required></label>
+        <label>Email: <input name="email" type="email" required></label>
+        <label>Mobile: <input name="mobile" required></label>
+        <label>Query: <input name="query" required></label>
+        <label>User ID: <input name="userId" value="test-user-id" required></label>
+        <button type="submit">Create Request</button>
+    </form>
+    <div id="requestResult" class="result"></div>
+
+    <h2>GET /api/chat/:chatId</h2>
+    <form id="chatHistoryForm">
+        <label>Chat ID: <input name="chatId" required></label>
+        <button type="submit">Get Chat History</button>
+    </form>
+    <div id="chatHistoryResult" class="result"></div>
+
+    <script>
+    document.getElementById('requestForm').onsubmit = async function(e) {
+        e.preventDefault();
+        const data = Object.fromEntries(new FormData(this).entries());
+        const res = await fetch('http://localhost:5000/api/chat/request', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data)
+        });
+        const json = await res.json();
+        document.getElementById('requestResult').textContent = JSON.stringify(json, null, 2);
+    };
+    document.getElementById('chatHistoryForm').onsubmit = async function(e) {
+        e.preventDefault();
+        const chatId = this.chatId.value;
+        const res = await fetch(`http://localhost:5000/api/chat/${chatId}`);
+        const json = await res.json();
+        document.getElementById('chatHistoryResult').textContent = JSON.stringify(json, null, 2);
+    };
+    </script>
+</body>
+</html> 

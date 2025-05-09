@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chat Support</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js" integrity="sha384-mZLF4UVrpi/QTWPA7BjNPEnkIfRFn4ZEO3Qt/HFklTJBj/gBOV8G3HcKn4NfQblz" crossorigin="anonymous"></script>
+</head>
+<body>
+    <div class="chat-widget" id="chatWidget" style="display: none;">
+        <div class="chat-header" id="chatHeader">
+            <img src="public/images/logo.png" alt="AWT Logo" class="company-logo" style="width:40px;height:40px;border-radius:50%;margin-right:10px;">
+            <div class="company-info">
+                <span class="company-name">Angadi World Technologies</span>
+                <span class="status"><span class="status-dot"></span> We are online to assist you</span>
+            </div>
+            <button id="minimizeBtn">X</button>
+        </div>
+        <div class="chat-body" id="chatBody">
+            <div class="chat-messages" id="chatMessages">
+                <div class="chat-options" id="chatOptions">
+                    <button class="option-btn">Address</button>
+                    <button class="option-btn">About Us</button>
+                    <button class="option-btn">Contact Details</button>
+                    <button class="option-btn">Book Appointment</button>
+                    <button class="option-btn">View Products/Services</button>
+                    <button class="option-btn">Pricing</button>
+                    <button class="option-btn">Our Customers</button>
+                    <button class="option-btn">Request Human Agent</button>
+                </div>
+            </div>
+            <div class="chat-input">
+                <input type="text" id="userInput" placeholder="Type your message...">
+                <button id="sendBtn" aria-label="Send">
+                    <svg viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"></path></svg>
+                </button>
+            </div>
+        </div>
+    </div>
+    <div class="chat-icon" id="chatIcon">
+        <img src="public/images/logo.png" alt="AWT Logo" style="width:40px;height:40px;border-radius:50%;">
+    </div>
+    <script type="module" src="./script.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const chatWidget = document.getElementById('chatWidget');
+            const chatIcon = document.getElementById('chatIcon');
+            const closeChatBtn = document.getElementById('minimizeBtn');
+            const chatHeader = document.getElementById('chatHeader');
+            const chatBody = document.getElementById('chatBody');
+
+            chatIcon.addEventListener('click', () => {
+                chatWidget.style.display = 'block';
+                chatIcon.style.display = 'none';
+                chatHeader.style.display = 'flex';
+                chatBody.style.display = 'block';
+            });
+
+            closeChatBtn.addEventListener('click', () => {
+                chatWidget.style.display = 'none';
+                chatIcon.style.display = 'block';
+            });
+        });
+    </script>
+</body>
+</html> 
