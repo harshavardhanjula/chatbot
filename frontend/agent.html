@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Agent Dashboard - Chat Support</title>
+    <link rel="icon" type="image/x-icon" href="public/images/logo.png">
+    <link rel="stylesheet" href="styles.css">
+    <style>
+        body { 
+            background: #f4f6fb; 
+            font-family: 'Segoe UI', Arial, sans-serif; 
+            margin: 0; 
+        }
+        .login-center-wrapper {
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #f4f6fb;
+        }
+        .login-container {
+            max-width: 350px;
+            width: 100%;
+            margin: 0 auto;
+            background: #fff;
+            border-radius: 12px;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+            padding: 32px 28px 28px 28px;
+        }
+        .login-title {
+            font-size: 2em;
+            font-weight: 500;
+            color: #555;
+            margin-bottom: 24px;
+            text-align: center;
+        }
+        .login-label {
+            font-size: 1.05em;
+            color: #555;
+            margin-bottom: 4px;
+            margin-top: 10px;
+            display: block;
+        }
+        .login-form input[type="text"],
+        .login-form input[type="password"] {
+            width: 100%;
+            padding: 12px;
+            border-radius: 4px;
+            border: 1px solid #ccc;
+            font-size: 1em;
+            margin-bottom: 0;
+            margin-top: 0;
+            box-sizing: border-box;
+        }
+        .login-btn {
+            width: 100%;
+            border: none;
+            border-radius: 4px;
+            padding: 14px 0;
+            cursor: pointer;
+            background: #007799;
+            color: #fff;
+            font-size: 1.1em;
+            font-weight: 600;
+            margin-top: 18px;
+            transition: background 0.2s;
+        }
+        .login-btn:hover {
+            background: #005f7a;
+        }
+        .login-error {
+            color: #f44336;
+            text-align: center;
+            margin-top: 8px;
+            font-size: 1.1em;
+        }
+        .dashboard-container {
+            display: flex;
+            min-height: 100vh;
+            background: #f4f6fb;
+        }
+        .sidebar {
+            width: 250px;
+            background: #fff;
+            box-shadow: 2px 0 5px rgba(0,0,0,0.1);
+            padding: 24px;
+            position: fixed;
+            height: 100vh;
+            overflow-y: auto;
+            z-index: 1;
+        }
+        .main-content {
+            flex: 1;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            overflow: hidden;
+        }
+        .chat-list {
+            margin-top: 20px;
+        }
+        .chat-item {
+            padding: 10px;
+            border-bottom: 1px solid #eee;
+            cursor: pointer;
+        }
+        .chat-item:hover {
+            background: #f5f5f5;
+        }
+        .chat-item.active {
+            background: #e3f2fd;
+        }
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 20px;
+            background: #fff;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .logout-btn {
+            padding: 8px 16px;
+            background: #dc3545;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        .logout-btn:hover {
+            background: #c82333;
+        }
+        .agent-status {
+            font-size: 14px;
+            color: #666;
+            margin-top: 5px;
+        }
+    </style>
+</head>
+<body>
+    <!-- Login Section -->
+    <div id="login-section">
+        <div class="login-center-wrapper">
+        <div class="login-container">
+            <div class="login-title">Agent Login</div>
+            <form class="login-form" id="agentLoginForm">
+                <label for="username" class="login-label">Username:</label>
+                <input type="text" id="username" placeholder="Enter username" required autocomplete="username" />
+                <label for="password" class="login-label">Password:</label>
+                <input type="password" id="password" placeholder="Enter password" required autocomplete="current-password" />
+                <div style="margin: 8px 0 0 0; display: flex; align-items: center;">
+                    <input type="checkbox" id="showPassword" style="margin-right: 6px;" />
+                    <label for="showPassword" style="font-size: 0.98em; color: #444; cursor: pointer;">Show Password</label>
+                </div>
+                <button type="submit" class="login-btn" id="loginBtn">SIGN IN</button>
+            </form>
+            <div class="login-error" id="loginError"></div>
+        </div>
+    </div>
+    </div>
+
+    <!-- Dashboard Section -->
+    <div id="dashboard-section" style="display: none;">
+        <div class="header">
+            <div>
+                <h2>Agent Dashboard</h2>
+                <div id="agentName" class="agent-status">Agent Status</div>
+            </div>
+            <button class="logout-btn" id="logoutBtn">Logout</button>
+        </div>
+        <div class="dashboard-container">
+            <div class="sidebar">
+                <h3>Active Chats</h3>
+                <div id="pendingRequests" class="chat-list">
+                    <!-- Pending requests will be populated here -->
+                </div>
+                <h3 style="margin-top:32px;">Resolved Requests</h3>
+                <div id="resolvedRequests" class="chat-list">
+                    <!-- Resolved requests will be populated here -->
+                </div>
+            </div>
+             <div class="main-content" style="margin-left: 250px; padding: 24px;">
+                <div id="currentChatUser" style="margin-bottom: 20px; font-weight: bold; color: #333;"></div>
+                <div id="liveChatArea" style="display:none; height: 600px; border: 1px solid #ddd; border-radius: 8px; background: #fff; display: flex; flex-direction: column;">
+                    <div id="chatUserHeader" style="font-weight:bold; padding: 16px 20px; border-bottom: 1px solid #eee; color: #333; background: #f8f9fa;"></div>
+                    <div id="agentChatMessages" class="chat-messages" style="flex: 1; overflow-y:auto; margin: 0; padding: 20px; background: #f8f9fa; border-bottom: 1px solid #eee;"></div>
+                    <div class="chat-input-container" style="display:flex; gap:12px; padding: 12px 20px; background: #f8f9fa;">
+                        <input type="text" id="agentInput" class="chat-input" placeholder="Type your message..." style="flex:1; padding: 12px; border: 1px solid #ddd; border-radius: 4px; background: #fff;">
+                        <button id="agentSendBtn" class="send-btn" style="padding: 12px 24px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 500;">Send</button>
+                    </div>
+                </div>
+                <div id="noActiveChat" style="color:#888; text-align:center; margin-top:40px;">No active chat selected. Select a request to start chatting.</div>
+            </div>
+        </div>
+    </div>
+
+    <script type="module" src="./agent.js"></script>
+</body>
+</html> 
