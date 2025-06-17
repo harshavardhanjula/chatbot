@@ -1,0 +1,550 @@
+import socket from './socket.js';
+
+// Message queue for batching
+let messageQueue = [];
+let isProcessingQueue = false;
+const MESSAGE_BATCH_DELAY = 50; // ms
+
+// Process message queue
+async function processMessageQueue() {
+    if (isProcessingQueue || messageQueue.length === 0) return;
+    
+    isProcessingQueue = true;
+    const messagesToProcess = [...messageQueue];
+    messageQueue = [];
+    
+    try {
+        // Process messages in a single batch
+        messagesToProcess.forEach(({ message, isAgent }) => {
+            addMessage(message, isAgent);
+        });
+        
+        // Scroll to bottom after batch update
+        requestAnimationFrame(() => {
+            scrollToBottom();
+        });
+    } finally {
+        isProcessingQueue = false;
+        
+        // Process any new messages that arrived while we were processing
+        if (messageQueue.length > 0) {
+            setTimeout(processMessageQueue, MESSAGE_BATCH_DELAY);
+        }
+    }
+}
+
+// Queue a message for processing
+function queueMessage(message, isAgent) {
+    messageQueue.push({ message, isAgent });
+    
+    // Process queue after a short delay to allow batching
+    if (!isProcessingQueue) {
+        setTimeout(processMessageQueue, MESSAGE_BATCH_DELAY);
+    }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    // Get all required DOM elements
+    const loginSection = document.getElementById('login-section');
+    const dashboardSection = document.getElementById('dashboard-section');
+    const loginForm = document.getElementById('agentLoginForm');
+    const loginError = document.getElementById('loginError');
+    const logoutBtn = document.getElementById('logoutBtn');
+    const showPasswordCheckbox = document.getElementById('showPassword');
+    const passwordInput = document.getElementById('password');
+    const agentName = document.getElementById('agentName');
+    const pendingRequests = document.getElementById('pendingRequests');
+    const agentChatMessages = document.getElementById('agentChatMessages');
+    const agentInput = document.getElementById('agentInput');
+    const agentSendBtn = document.getElementById('agentSendBtn');
+    const currentChatUser = document.getElementById('currentChatUser');
+    const agentExitBtn = document.getElementById('agentExitBtn');
+    const loginWrapper = document.getElementById('agentLoginWrapper');
+
+    // Store agent's socket ID and chat state
+    let agentSocketId = null;
+    let currentChatId = null;
+    let currentUserId = null;
+
+    // Connection status logging
+    socket.on('connect', () => {
+        console.log('✅ Agent WebSocket Connected! Socket ID:', socket.id);
+        agentSocketId = socket.id;
+        if (agentName) {
+            agentName.textContent = `Agent Online (ID: ${socket.id})`;
+        }
+    });
+
+    socket.on('disconnect', () => {
+        console.log('❌ Agent WebSocket Disconnected!');
+        if (agentName) {
+            agentName.textContent = 'Agent Offline - Reconnecting...';
+        }
+    });
+
+    socket.on('connect_error', (error) => {
+        console.error('Agent WebSocket Connection Error:', error.message);
+        if (agentName) {
+            agentName.textContent = `Connection Error: ${error.message}`;
+        }
+    });
+
+    // Cookie utility functions
+    function setCookie(name, value, days) {
+        let expires = '';
+        if (days) {
+            const date = new Date();
+            date.setTime(date.getTime() + (days * 24 * 60 * 60 * 1000));
+            expires = '; expires=' + date.toUTCString();
+        }
+        document.cookie = name + '=' + (value || '') + expires + '; path=/; SameSite=Strict';
+    }
+    
+    function getCookie(name) {
+        const nameEQ = name + '=';
+        const ca = document.cookie.split(';');
+        for (let i = 0; i < ca.length; i++) {
+            let c = ca[i];
+            while (c.charAt(0) === ' ') c = c.substring(1, c.length);
+            if (c.indexOf(nameEQ) === 0) return c.substring(nameEQ.length, c.length);
+        }
+        return null;
+    }
+    
+    function deleteCookie(name) {
+        document.cookie = name + '=; Max-Age=-99999999; path=/; SameSite=Strict';
+    }
+
+    // Check if agent is already logged in
+    const agentToken = getCookie('agentToken');
+    if (agentToken) {
+        showDashboard();
+    } else {
+        showLogin();
+    }
+
+    // Function to add a request to the pending list
+    function addRequest(request) {
+        const requestDiv = document.createElement('div');
+        requestDiv.className = 'request-card';
+        // Format the date
+        let timeString = 'Unknown time';
+        if (request.timestamp) {
+            try {
+                const date = new Date(request.timestamp);
+                timeString = date.toLocaleString();
+            } catch (e) {}
+        }
+        requestDiv.innerHTML = `
+            <div style="margin-bottom: 8px;">
+                <strong style="color: #333;">${request.name || 'Unknown'}</strong>
+                <span style="color: #666; margin-left: 10px;">${timeString}</span>
+            </div>
+            <div style="margin: 4px 0; color: #333;">${request.query || 'No query provided'}</div>
+            <button class="join-chat-btn" style="margin-top: 8px; padding: 8px 16px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer;">Join Chat</button>
+        `;
+        
+        // Join Chat button handler
+        requestDiv.querySelector('.join-chat-btn').addEventListener('click', async () => {
+            try {
+                if (!request.id) {
+                    console.error('No request.id found!');
+                    return;
+                }
+                
+                // Store the current chat ID and user ID
+                currentChatId = request.id;
+                currentUserId = request.userId || `user_${Date.now()}`;
+                
+                // Update UI to show active chat
+                currentChatUser.textContent = `User: ${request.name || 'Unknown'}`;
+                document.getElementById('liveChatArea').style.display = 'flex';
+                document.getElementById('noActiveChat').style.display = 'none';
+                
+                // Clear previous messages
+                agentChatMessages.innerHTML = '';
+                
+                // Notify server that agent is joining the chat
+                socket.emit('join_chat', {
+                    requestId: request.id,
+                    userId: currentUserId,
+                    socketId: socket.id
+                });
+                
+                // Update request status to active
+                const response = await fetch(`/api/requests/${request.id}/status`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        status: 'active',
+                        agentId: socket.id,
+                        agentName: getCookie('agentName') || 'Agent'
+                    })
+                });
+                
+                if (!response.ok) {
+                    throw new Error('Failed to update request status');
+                }
+                
+                const result = await response.json();
+                console.log('Request status updated:', result);
+                
+                // Remove the request from the pending list
+                requestDiv.remove();
+                
+                // Add system message
+                addSystemMessage(`You are now chatting with ${request.name || 'the user'}`);
+                
+            } catch (error) {
+                console.error('Error joining chat:', error);
+                alert('Failed to join chat. Please try again.');
+            }
+        });
+        
+        pendingRequests.appendChild(requestDiv);
+    }
+
+    // Function to add message to chat
+    function addMessage(message, isAgent = true) {
+        const messageDiv = document.createElement('div');
+        messageDiv.className = 'message-container';
+        
+        const messageContent = document.createElement('div');
+        // Add class for alignment
+        if (isAgent) {
+            messageContent.className = 'message agent';
+            messageContent.style.alignSelf = 'flex-start';
+            messageContent.style.background = '#e3f2fd';
+            messageContent.style.color = '#1976d2';
+        } else {
+            messageContent.className = 'message user';
+            messageContent.style.alignSelf = 'flex-end';
+            messageContent.style.background = '#ede7f6';
+            messageContent.style.color = '#5a4fff';
+        }
+        
+        // Consistent styling for all messages
+        messageContent.style.padding = '8px 14px';
+        messageContent.style.borderRadius = '16px';
+        messageContent.style.marginBottom = '8px';
+        messageContent.style.maxWidth = '70%';
+        messageContent.style.wordWrap = 'break-word';
+        messageContent.style.display = 'inline-block';
+        messageContent.textContent = message;
+
+        // Add timestamp
+        const timestamp = document.createElement('div');
+        timestamp.className = 'message-timestamp';
+        timestamp.style.fontSize = '0.75em';
+        timestamp.style.color = '#888';
+        timestamp.style.marginTop = '4px';
+        timestamp.textContent = new Date().toLocaleTimeString();
+
+        messageContent.appendChild(timestamp);
+        messageDiv.appendChild(messageContent);
+        agentChatMessages.appendChild(messageDiv);
+        
+        // Scroll to bottom after adding message
+        scrollToBottom();
+    }
+
+    // Function to scroll chat to bottom
+    function scrollToBottom() {
+        if (agentChatMessages) {
+            agentChatMessages.scrollTop = agentChatMessages.scrollHeight;
+        }
+    }
+
+    // Function to show typing indicator
+    function showTypingIndicator(message) {
+        let indicator = document.getElementById('typingIndicator');
+        if (!indicator) {
+            indicator = document.createElement('div');
+            indicator.id = 'typingIndicator';
+            indicator.className = 'message bot typing-indicator';
+            agentChatMessages.appendChild(indicator);
+        }
+        indicator.textContent = message;
+        clearTimeout(window.typingTimeout);
+        window.typingTimeout = setTimeout(() => {
+            if (indicator) indicator.remove();
+        }, 2000);
+    }
+
+    // Fetch requests from backend and display them
+    function fetchRequests() {
+        fetch('http://localhost:5000/api/requests')
+            .then(res => res.json())
+            .then(requests => {
+                if (pendingRequests) {
+                    pendingRequests.innerHTML = '';
+                    requests.forEach(addRequest);
+                }
+            })
+            .catch(error => {
+                console.error('Error fetching requests:', error);
+                if (pendingRequests) {
+                    pendingRequests.innerHTML = '<div style="color:red;">Failed to fetch requests</div>';
+                }
+            });
+    }
+
+    // Fetch resolved requests and display them
+    function fetchResolvedRequests() {
+        const resolvedRequestsDiv = document.getElementById('resolvedRequests');
+        if (!resolvedRequestsDiv) return;
+        
+        fetch('http://localhost:5000/api/resolved-requests')
+            .then(res => res.json())
+            .then(requests => {
+                resolvedRequestsDiv.innerHTML = '';
+                if (requests.length === 0) {
+                    resolvedRequestsDiv.innerHTML = '<div style="color:#888;">No resolved requests.</div>';
+                    return;
+                }
+                requests.forEach(request => {
+                    const div = document.createElement('div');
+                    div.className = 'request-card';
+                    let timeString = 'Unknown time';
+                    if (request.timestamp) {
+                        try {
+                            const date = new Date(request.timestamp);
+                            timeString = date.toLocaleString();
+                        } catch (e) {}
+                    }
+                    div.innerHTML = `
+                        <div><strong>${request.name || 'Unknown'}</strong></div>
+                        <div style="margin: 4px 0; color: #333;">${request.query || 'No query provided'}</div>
+                        <div style="font-size: 0.9em; color: #888;">${timeString}</div>
+                    `;
+                    resolvedRequestsDiv.appendChild(div);
+                });
+            })
+            .catch(error => {
+                console.error('Error fetching resolved requests:', error);
+                resolvedRequestsDiv.innerHTML = '<div style="color:red;">Failed to fetch resolved requests</div>';
+            });
+    }
+
+    // Show login section and hide dashboard
+    function showLogin() {
+        if (loginSection) loginSection.style.display = 'block';
+        if (dashboardSection) dashboardSection.style.display = 'none';
+    }
+
+    // Show dashboard and hide login
+    function showDashboard() {
+        if (loginSection) loginSection.style.display = 'none';
+        if (dashboardSection) dashboardSection.style.display = 'block';
+        initializeDashboard();
+    }
+
+    // Initialize dashboard
+    function initializeDashboard() {
+        fetchRequests();
+        fetchResolvedRequests();
+        
+        // Set up event listeners
+        setupEventListeners();
+    }
+
+    // Set up event listeners
+    function setupEventListeners() {
+        // Show/hide password
+        if (showPasswordCheckbox && passwordInput) {
+            showPasswordCheckbox.addEventListener('change', () => {
+                passwordInput.type = showPasswordCheckbox.checked ? 'text' : 'password';
+            });
+        }
+
+        // Login form submission
+        if (loginForm) {
+            loginForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                
+                const username = document.getElementById('username').value.trim();
+                const password = document.getElementById('password').value;
+                const loginButton = loginForm.querySelector('button[type="submit"]');
+                const originalButtonText = loginButton.textContent;
+                
+                try {
+                    // Disable button and show loading state
+                    loginButton.disabled = true;
+                    loginButton.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Logging in...';
+                    
+                    if (loginError) {
+                        loginError.style.display = 'none';
+                    }
+                    
+                    // Use the agent login endpoint
+                    const response = await fetch('http://localhost:5000/api/agent/login', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ 
+                            username: username,
+                            password: password
+                        })
+                    });
+                    
+                    const data = await response.json();
+                    
+                    if (!response.ok) {
+                        throw new Error(data.error || data.message || 'Login failed. Please check your credentials.');
+                    }
+                    
+                    // Store the authentication token and user data in cookies
+                    if (data && data.token) {
+                        const userData = data.user || {};
+                        setCookie('agentToken', data.token, 1);
+                        setCookie('agentId', userData._id || 'agent', 1);
+                        setCookie('agentName', userData.name || userData.username || 'Agent', 1);
+                        setCookie('agentEmail', userData.email || '', 1);
+                        
+                        // Update UI to show logged-in state
+                        if (agentName) {
+                            agentName.textContent = userData.name || userData.username || 'Agent';
+                        }
+                        
+                        showDashboard();
+                    } else {
+                        throw new Error('Invalid response from server. Missing token or user data.');
+                    }
+                } catch (error) {
+                    console.error('Login error:', error);
+                    if (loginError) {
+                        loginError.textContent = error.message || 'Login failed. Please try again.';
+                        loginError.style.display = 'block';
+                    }
+                } finally {
+                    // Re-enable button and restore text
+                    if (loginButton) {
+                        loginButton.disabled = false;
+                        loginButton.textContent = originalButtonText;
+                    }
+                }
+            });
+        }
+
+        // Logout button
+        if (logoutBtn) {
+            logoutBtn.addEventListener('click', () => {
+                // Clear cookies
+                deleteCookie('agentToken');
+                deleteCookie('agentId');
+                deleteCookie('agentName');
+                deleteCookie('agentEmail');
+                
+                // Disconnect socket
+                socket.disconnect();
+                
+                // Show login screen
+                showLogin();
+            });
+        }
+
+        // Send message on Enter key (with Shift+Enter for new line)
+        if (agentInput) {
+            agentInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    sendMessage();
+                }
+            });
+        }
+
+        // Typing indicator logic for agent with debounce
+        let typingTimeout;
+        const TYPING_DEBOUNCE_TIME = 1000; // 1 second
+        
+        if (agentInput) {
+            agentInput.addEventListener('input', () => {
+                if (!currentChatId) return;
+                
+                // Clear any existing timeout
+                clearTimeout(typingTimeout);
+                
+                // Only emit typing if we haven't already recently
+                if (!socket.typing) {
+                    socket.emit('typing', { chatId: currentChatId, user: 'agent' });
+                    socket.typing = true;
+                }
+                
+                // Set a timeout to reset the typing flag
+                typingTimeout = setTimeout(() => {
+                    socket.typing = false;
+                }, TYPING_DEBOUNCE_TIME);
+            });
+        }
+    }
+
+    // Send message function
+    async function sendMessage() {
+        const message = agentInput.value.trim();
+        if (!message || !currentChatId) return;
+        
+        // Add message to UI immediately for better UX
+        addMessage(message, true);
+        
+        // Clear input
+        agentInput.value = '';
+        
+        try {
+            const response = await fetch('http://localhost:5000/api/messages', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${getCookie('agentToken')}`
+                },
+                body: JSON.stringify({
+                    chatId: currentChatId,
+                    content: message,
+                    sender: 'agent'
+                })
+            });
+            
+            if (!response.ok) {
+                throw new Error('Failed to send message');
+            }
+            
+            // Message sent successfully
+            const data = await response.json();
+            console.log('Message sent:', data);
+            
+        } catch (error) {
+            console.error('Error sending message:', error);
+            // Show error message in chat
+            const errorDiv = document.createElement('div');
+            errorDiv.className = 'error-message';
+            errorDiv.textContent = 'Failed to send message. Please try again.';
+            agentChatMessages.appendChild(errorDiv);
+            scrollToBottom();
+        }
+    }
+
+    // Handle window unload
+    window.addEventListener('beforeunload', () => {
+        // Clean up any pending messages
+        messageQueue = [];
+        // Notify server that agent is going offline
+        socket.emit('agent_disconnecting');
+    });
+
+    // Listen for incoming messages
+    socket.on('receive_message', (data) => {
+        if (data.chatId === currentChatId) {
+            addMessage(data.content, data.sender === 'agent');
+        }
+    });
+
+    // Listen for typing indicators
+    socket.on('typing', (data) => {
+        if (data.chatId === currentChatId && data.user !== 'agent') {
+            showTypingIndicator('User is typing...');
+        }
+    });
+
+    // Initialize the dashboard if already logged in
+    if (getCookie('agentToken')) {
+        initializeDashboard();
+    }
+});
